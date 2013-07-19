@@ -1,0 +1,219 @@
+Audit Shield 2.x Install Guide
+
+1.
+Download the following from github
+audmgr.v2.5.8.2-u8-2.6.18-238.el5.deploy
+sys_audit.v1.1.6.4.tgz
+
+
+2. Create directory audmgr
+cd /opt/oracle
+mkdir audmgr
+
+Move files to /opt/oracle/audmgr
+gunzip the file audmgr.v2.5.8.2-u8-2.6.18-238.el5.deploy.tgz
+example
+gunzip audmgr.v2.5.8.2-u8-2.6.18-238.el5.deploy.tgz
+
+tar the files
+tar xvf 
+example:
+ tar xvf audmgr.v2.5.8.2-u8-2.6.18-238.el5.deploy.tar
+
+
+
+
+Make new directory under /opt/oracle/audmgr
+mkdir scripts
+move sys_audit.v1.1.6.4.tgz to /opt/oracle/audmgr/scripts
+gunzip sys_audit.v1.1.6.4.tgz 
+gunzip sys_audit.v1.1.6.4.tgz 
+tar the sys_audit.v1.1.6.4.tar  file
+tar xvf sys_audit.v1.1.6.4.tar
+
+3. Replace the sql directory with audmgr.sql.20130710.tar
+
+4. Set your environment variables 
+
+The Audit Shield agents, via audctl, expects the ORACLE_HOME environment variable to be set, 
+and the product database version set as "database".
+
+    For example, if the ORACLE_HOME is set as /opt/oracle/product/11GR2 then
+    the audctl expects a symbolic link /opt/oracle/product/database pointing to that location: 
+         "/opt/oracle/product/database -> /opt/oracle/product/11GR2"
+       ln -s /opt/oracle/product/database -> /opt/oracle/product/dbs
+
+    Additionally, the Audit Shield agent uses the Oracle client shell shared object library libclnsh.so.<ver>, either set in the PATH or in the LD_LIBRARY_PATH environment variables. otherwise it will not start.
+
+Create symbolic link for the archive directory
+cd /opt/oracle/audmgr
+ln -s /opt/oracle/archive archive
+
+Create symbolic link for audmgrd
+cd /opt/oracle/audmgr/bin
+ln -s /opt/oracle/audmgr/init/audmgrd  /opt/oracle/audmgr/bin/audctl
+
+cd ~
+vi .bash_profile
+insert the following lines
+export AUDMGR_HOME=/opt/oracle/audmgr
+export LD_LIBRARY_PATH=/opt/oracle/product/dbs/lib
+export PATH=$PATH:$LD_LIBRARY_PATH
+export PATH=$PATH:$AUDMGR_HOME/bin
+
+
+5.Repository
+    ----------------------------------------------------------------------------
+    The first step in the installation process is to create a central repository.  This must be a Enterprise Edition Oracle RDBMS 11GR1 or higher system.  Extract the contents of the audmgr.<version>.<platform>.tgz.
+
+    It is highly recommended that Audit Shield be installed as the oracle user account and the AUDMGR_HOME placed directly under the $ORACLE_BASE directory.
+
+    For example, if the Oracle RDBMS 11G database is installed in the directory /opt/oracle/product and the ORACLE_BASE is /opt/oracle, then Audit Shield would best be installed in the /opt/oracle/audmgr directory and the environment variables set to that location.
+
+    Once the Audit Shield home directory has been created traverse to the SQL installation directory $AUDMGR_HOME/sql. There run the installation script,
+    via SQL*Plus as the SYSDBA user; for example.
+
+        $ sqlplus "/ as sysdba" @install_audmgr.sql
+
+    Upon competition review the log file <sid>_audmgr_install_<date>.log for
+    errors. if errors are encountered, remove Audit Shield, fix the errors and
+    (re)installation the repository.
+
+
+6. Create the config file in /opt/oracle/audmgr
+cd /opt/oracle/audmgr/conf
+vi audmgr.irsamid.conf
+***Make sure you change the approriate info
+
+
+****************************************************************************************************************************
+
+[server]
+daemon_mode      = true
+log_file         = /var/tmp/.audmgr/audmgr.irsamid.log
+log_level        = 7
+process_threads  = 5
+polling_threads  = 2
+polling_interval = 60
+notify_threads   = 3
+crypto_key       = /opt/oracle/audmgr/conf/.irsamid.key
+
+# v2.5
+indexing_slaves  = 8
+monitor_interval = 10
+
+#
+[source]
+database_name    = irsamid
+audit_dir        = /opt/oracle/admin/irsamid/adump
+file_mask        = ^.*\.(xml|aud)$
+expire_seconds   = 86400
+
+#
+[target]
+connect_retry   = 15
+connect         = userrname/<Password>@sid
+    example audmgr/Irsamid_00@irsamid
+
+# connetion entry
+#
+# alter user audmgr identified by "Irsamid_00";
+#
+# (description =
+#   (address = (protocol = tcp)(host = chromedev2.mtihq.com)(port = 1521))
+#   (connect_data =
+#     (server = dedicated)
+#     (service_name = irsamid)
+#   )
+# )
+                                                                         
+****************************************************************************************************************************
+
+7.
+Make sure you have at least 7G of space.
+Log into sqlplus
+cd /opt/oracle/audmgr/sql
+sqlplus /nolog
+conn /as sysdba
+@install_audmgr.sql
+
+8. Register the repository
+sqlplus /nolog
+conn /as sysdba
+exec dbms_audit_manager.register( '<registry_name>' );
+example
+exec dbms_audit_manager.register ('irsamid');
+exit;
+
+9. Create the encrypted key
+/opt/oracle/audmgr/utils/gen_keyfile /opt/oracle/audmgr/conf/.irsamid.key 500
+
+example
+/opt/oracle/audmgr/utils/gen_keyfile /opt/oracle/audmgr/conf/.irsamid.key 500
+Outfile cleared ...
+Generating new data ....................................................................................
+done
+-rw-r--r-- 1 oracle dba 2299 Jul 10 16:33 /opt/oracle/audmgr/conf/.irsamid.key
+
+Note after creating the key file, open the logfile and copy the AES key to the audgmr.irsamid.conf file
+
+10. Create audtab file
+The Control table file should be physically located in the $AUDMGR_HOME/init
+cd /opt/oracle/audmgr/init
+vi audtab
+insert
+irsamid:/opt/oracle/audmgr/conf/audmgr.irsamid.conf:Y
+
+11. Create the symbolic link for audtab
+ln -s /etc/audtab -> $AUDMGR_HOME/init/audtab
+
+12. Set the "audit_trail" parameter in the database needs to be set to XML
+sqlplus /nolog 
+conn /as sysdba
+alter system set audit_trail = XML,EXTENDED scope=spfile;
+System altered.
+
+SQL> commit;
+
+Commit complete.
+
+SQL> exit;
+
+12. Edit the audmgr.init file
+cd /opt/oracle/audmgr/init
+vi audmgr.init
+Edit the following lines
+ORACLE_BASE=/opt/oracle
+ORACLE_HOME=$ORACLE_BASE/product/dbs
+
+13. Edit the audmgrd
+cd /opt/oracle/audmgr/init
+vi audmgrd
+
+change the following lines
+ORACLE_BASE=/u01/oracle  -> ORACLE_BASE=/opt/oracle
+ $AUDMGR_INIT $1 $2      -> $audinit $1 $2
+
+14. Edit the audmgr.root file
+cd /opt/oracle/audmgr/init
+vi audmgr.root
+change the following lines
+ORACLE_BASE=/u01/oracle    - > ORACLE_BASE=/opt/oracle
+ORACLE_HOME=$ORACLE_BASE/db/product/database   -> ORACLE_HOME=$ORACLE_BASE/product/dbs 
+
+15. Make sure you have gunzipped and untarred sys_audit.v1.1.6.4.tgz
+cd to /opt/oracle/audmgr/scripts
+sqlplus /nolog
+conn /as sysdba
+@install_sys_audit.sql
+exit;
+
+15. Now run 
+audmgrd start
+audmgrd status
+
+
+
+
+
+
