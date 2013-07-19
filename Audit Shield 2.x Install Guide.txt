@@ -3,6 +3,7 @@ Audit Shield 2.x Install Guide
 1.
 Download the following from github
 audmgr.v2.5.8.2-u8-2.6.18-238.el5.deploy
+audmgr.sql.20130710.tar
 sys_audit.v1.1.6.4.tgz
 
 
